@@ -56,3 +56,24 @@ class LoginView(APIView):
             path="/",
         )
         return response
+
+
+class LogoutView(APIView):
+    permission_classes = [AllowAny]
+
+    def post(self, request):
+        response = Response(
+            {"detail": "Logout successful."},
+            status=status.HTTP_200_OK,
+        )
+        response.delete_cookie(
+            key=settings.JWT_AUTH_COOKIE,
+            path="/",
+            samesite=settings.JWT_COOKIE_SAMESITE,
+        )
+        response.delete_cookie(
+            key=settings.JWT_AUTH_REFRESH_COOKIE,
+            path="/",
+            samesite=settings.JWT_COOKIE_SAMESITE,
+        )
+        return response
