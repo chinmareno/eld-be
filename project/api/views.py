@@ -1,17 +1,16 @@
-from datetime import timedelta
-from decimal import Decimal
-import json
+﻿import json
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
+
 from django.conf import settings
 from django.contrib.auth import authenticate
 from django.db import transaction
 from django.utils import timezone
 from rest_framework import status
 from rest_framework.permissions import AllowAny, IsAuthenticated
-from rest_framework.exceptions import NotFound
 from rest_framework.response import Response
 from rest_framework.views import APIView
+from rest_framework.exceptions import NotFound
 from rest_framework_simplejwt.tokens import RefreshToken
 
 from .models import StatusEvent, Trip
@@ -24,6 +23,8 @@ from .serializer import (
     TripSummarySerializer,
     UserSerializer,
 )
+from datetime import timedelta
+from decimal import Decimal
 
 
 def _token_max_age(setting_name):
@@ -124,16 +125,22 @@ class TripCreateView(APIView):
 
         data = serializer.validated_data
         route_summary = _build_route_summary(
-            data["current_location"],
-            data["pickup_location"],
-            data["dropoff_location"],
+            (float(data["current_location_lat"]), float(data["current_location_lng"])),
+            (float(data["pickup_location_lat"]), float(data["pickup_location_lng"])),
+            (float(data["dropoff_location_lat"]), float(data["dropoff_location_lng"])),
         )
 
         trip = Trip.objects.create(
             user=request.user,
-            current_location=data["current_location"],
-            pickup_location=data["pickup_location"],
-            dropoff_location=data["dropoff_location"],
+            current_location_name=data["current_location_name"],
+            current_location_lat=data["current_location_lat"],
+            current_location_lng=data["current_location_lng"],
+            pickup_location_name=data["pickup_location_name"],
+            pickup_location_lat=data["pickup_location_lat"],
+            pickup_location_lng=data["pickup_location_lng"],
+            dropoff_location_name=data["dropoff_location_name"],
+            dropoff_location_lat=data["dropoff_location_lat"],
+            dropoff_location_lng=data["dropoff_location_lng"],
             cycle_used_hours=data["cycle_used_hours"],
             current_status=data["start_status"],
             current_status_started_at=data["start_time"],
@@ -290,13 +297,7 @@ def _get_trip_or_404(user, trip_id):
 
 
 def _build_route_summary(current_location, pickup_location, dropoff_location):
-    try:
-        coords = [_geocode_location(current_location), _geocode_location(pickup_location), _geocode_location(dropoff_location)]
-    except Exception:
-        return {}
-
-    if any(value is None for value in coords):
-        return {}
+    coords = [current_location, pickup_location, dropoff_location]
 
     try:
         route = _fetch_route(coords)
@@ -316,19 +317,6 @@ def _build_route_summary(current_location, pickup_location, dropoff_location):
         "polyline": route.get("polyline"),
         "stops": stops,
     }
-
-
-def _geocode_location(query):
-    params = urlencode({"format": "json", "q": query, "limit": 1})
-    request = Request(
-        f"https://nominatim.openstreetmap.org/search?{params}",
-        headers={"User-Agent": "spotter-eld/1.0"},
-    )
-    with urlopen(request, timeout=10) as response:
-        data = json.loads(response.read().decode("utf-8"))
-    if not data:
-        return None
-    return float(data[0]["lat"]), float(data[0]["lon"])
 
 
 def _fetch_route(coords):

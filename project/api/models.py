@@ -30,9 +30,15 @@ class Trip(models.Model):
         on_delete=models.CASCADE,
         related_name="trips",
     )
-    current_location = models.CharField(max_length=255)
-    pickup_location = models.CharField(max_length=255)
-    dropoff_location = models.CharField(max_length=255)
+    current_location_name = models.CharField(max_length=255)
+    current_location_lat = models.DecimalField(max_digits=9, decimal_places=6)
+    current_location_lng = models.DecimalField(max_digits=9, decimal_places=6)
+    pickup_location_name = models.CharField(max_length=255)
+    pickup_location_lat = models.DecimalField(max_digits=9, decimal_places=6)
+    pickup_location_lng = models.DecimalField(max_digits=9, decimal_places=6)
+    dropoff_location_name = models.CharField(max_length=255)
+    dropoff_location_lat = models.DecimalField(max_digits=9, decimal_places=6)
+    dropoff_location_lng = models.DecimalField(max_digits=9, decimal_places=6)
     cycle_used_hours = models.DecimalField(max_digits=4, decimal_places=2)
     current_status = models.CharField(
         max_length=20,

@@ -20,9 +20,15 @@ class LoginSerializer(serializers.Serializer):
 
 
 class TripCreateSerializer(serializers.Serializer):
-    current_location = serializers.CharField(max_length=255)
-    pickup_location = serializers.CharField(max_length=255)
-    dropoff_location = serializers.CharField(max_length=255)
+    current_location_name = serializers.CharField(max_length=255)
+    current_location_lat = serializers.DecimalField(max_digits=9, decimal_places=6)
+    current_location_lng = serializers.DecimalField(max_digits=9, decimal_places=6)
+    pickup_location_name = serializers.CharField(max_length=255)
+    pickup_location_lat = serializers.DecimalField(max_digits=9, decimal_places=6)
+    pickup_location_lng = serializers.DecimalField(max_digits=9, decimal_places=6)
+    dropoff_location_name = serializers.CharField(max_length=255)
+    dropoff_location_lat = serializers.DecimalField(max_digits=9, decimal_places=6)
+    dropoff_location_lng = serializers.DecimalField(max_digits=9, decimal_places=6)
     cycle_used_hours = serializers.DecimalField(
         max_digits=4,
         decimal_places=2,
@@ -53,9 +59,15 @@ class TripSummarySerializer(serializers.ModelSerializer):
         model = Trip
         fields = (
             "id",
-            "current_location",
-            "pickup_location",
-            "dropoff_location",
+            "current_location_name",
+            "current_location_lat",
+            "current_location_lng",
+            "pickup_location_name",
+            "pickup_location_lat",
+            "pickup_location_lng",
+            "dropoff_location_name",
+            "dropoff_location_lat",
+            "dropoff_location_lng",
             "cycle_used_hours",
             "current_status",
             "current_status_started_at",
