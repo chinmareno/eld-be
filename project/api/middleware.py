@@ -2,7 +2,6 @@ from django.http import JsonResponse
 from rest_framework.exceptions import AuthenticationFailed
 
 from .authentication import CookieJWTAuthentication
-from .models import Driver
 
 
 class ApiAuthMiddleware:
@@ -30,6 +29,5 @@ class ApiAuthMiddleware:
 
             user, _token = auth_result
             request.user = user
-            request.driver = Driver.objects.filter(user=user).first()
 
         return self.get_response(request)
