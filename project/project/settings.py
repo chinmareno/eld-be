@@ -11,6 +11,7 @@ https://docs.djangoproject.com/en/6.0/ref/settings/
 """
 
 from datetime import timedelta
+import os
 from pathlib import Path
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
@@ -20,13 +21,28 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 # Quick-start development settings - unsuitable for production
 # See https://docs.djangoproject.com/en/6.0/howto/deployment/checklist/
 
+def parse_bool(value: str, default: bool) -> bool:
+    if value is None:
+        return default
+    return value.strip().lower() in {"1", "true", "yes", "on"}
+
+
+def parse_csv(value: str, default: list[str]) -> list[str]:
+    if not value:
+        return default
+    return [item.strip() for item in value.split(",") if item.strip()]
+
+
 # SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = 'django-insecure-ql91!j8!*(_os%46vb2emivmj6u25h^11v8m6^k3z!b((wd7jf'
+SECRET_KEY = os.getenv(
+    "DJANGO_SECRET_KEY",
+    "django-insecure-ql91!j8!*(_os%46vb2emivmj6u25h^11v8m6^k3z!b((wd7jf",
+)
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = True
+DEBUG = parse_bool(os.getenv("DJANGO_DEBUG"), True)
 
-ALLOWED_HOSTS = ["127.0.0.1", "localhost"]
+ALLOWED_HOSTS = parse_csv(os.getenv("DJANGO_ALLOWED_HOSTS"), ["127.0.0.1", "localhost"])
 
 
 # Application definition
@@ -123,11 +139,15 @@ STATIC_URL = 'static/'
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
-CORS_ALLOWED_ORIGINS = [
-    'http://localhost:5173',
-    'http://127.0.0.1:5173',
-]
-CORS_ALLOW_CREDENTIALS = True
+CORS_ALLOWED_ORIGINS = parse_csv(
+    os.getenv("DJANGO_CORS_ALLOWED_ORIGINS"),
+    ["http://localhost:5173", "http://127.0.0.1:5173"],
+)
+CORS_ALLOW_CREDENTIALS = parse_bool(os.getenv("DJANGO_CORS_ALLOW_CREDENTIALS"), True)
+CSRF_TRUSTED_ORIGINS = parse_csv(
+    os.getenv("DJANGO_CSRF_TRUSTED_ORIGINS"),
+    ["http://localhost:5173", "http://127.0.0.1:5173"],
+)
 
 REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': (
@@ -144,5 +164,5 @@ SIMPLE_JWT = {
 
 JWT_AUTH_COOKIE = 'access_token'
 JWT_AUTH_REFRESH_COOKIE = 'refresh_token'
-JWT_COOKIE_SECURE = False
-JWT_COOKIE_SAMESITE = 'Lax'
+JWT_COOKIE_SECURE = parse_bool(os.getenv("DJANGO_JWT_COOKIE_SECURE"), False)
+JWT_COOKIE_SAMESITE = os.getenv("DJANGO_JWT_COOKIE_SAMESITE", "Lax")
