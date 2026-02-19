@@ -4,6 +4,7 @@ from urllib.request import Request, urlopen
 
 from django.conf import settings
 from django.contrib.auth import authenticate
+from django.core.cache import cache
 from django.db import transaction
 from django.utils import timezone
 from rest_framework import status
@@ -114,6 +115,86 @@ class MeView(APIView):
 
     def get(self, request):
         return Response({"user": UserSerializer(request.user).data}, status=status.HTTP_200_OK)
+
+
+class GeocodeSearchView(APIView):
+    permission_classes = [AllowAny]
+
+    def get(self, request):
+        throttled_response = _check_geocode_rate_limit(request)
+        if throttled_response is not None:
+            return throttled_response
+
+        query = (request.query_params.get("q") or "").strip()
+        if len(query) < 3:
+            return Response({"results": []}, status=status.HTTP_200_OK)
+
+        params = {
+            "format": "json",
+            "q": query,
+            "limit": "5",
+        }
+        try:
+            data = _fetch_nominatim_json("search", params)
+        except Exception:
+            return Response(
+                {"detail": "Unable to search locations."},
+                status=status.HTTP_503_SERVICE_UNAVAILABLE,
+            )
+
+        results = []
+        for item in data:
+            try:
+                lat = float(item["lat"])
+                lng = float(item["lon"])
+            except (TypeError, ValueError, KeyError):
+                continue
+            results.append(
+                {
+                    "addressName": item.get("display_name") or "Selected location",
+                    "lat": lat,
+                    "lng": lng,
+                }
+            )
+        return Response({"results": results}, status=status.HTTP_200_OK)
+
+
+class GeocodeReverseView(APIView):
+    permission_classes = [AllowAny]
+
+    def get(self, request):
+        throttled_response = _check_geocode_rate_limit(request)
+        if throttled_response is not None:
+            return throttled_response
+
+        try:
+            lat = float(request.query_params.get("lat"))
+            lng = float(request.query_params.get("lng"))
+        except (TypeError, ValueError):
+            return Response(
+                {"detail": "Invalid coordinates."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        params = {
+            "format": "json",
+            "lat": f"{lat}",
+            "lon": f"{lng}",
+        }
+        try:
+            data = _fetch_nominatim_json("reverse", params)
+        except Exception:
+            return Response(
+                {"detail": "Unable to resolve address."},
+                status=status.HTTP_503_SERVICE_UNAVAILABLE,
+            )
+
+        result = {
+            "addressName": data.get("display_name") or "Unknown",
+            "lat": lat,
+            "lng": lng,
+        }
+        return Response({"result": result}, status=status.HTTP_200_OK)
 
 
 class TripCreateView(APIView):
@@ -294,6 +375,45 @@ def _get_trip_or_404(user, trip_id):
         return Trip.objects.get(id=trip_id, user=user)
     except Trip.DoesNotExist:
         raise NotFound(detail="Trip not found.")
+
+
+def _get_client_ip(request):
+    forwarded_for = request.META.get("HTTP_X_FORWARDED_FOR")
+    if forwarded_for:
+        return forwarded_for.split(",")[0].strip()
+    return request.META.get("REMOTE_ADDR", "unknown")
+
+
+def _check_geocode_rate_limit(request):
+    client_ip = _get_client_ip(request)
+    cache_key = f"geocode-rate:{client_ip}"
+    was_added = cache.add(cache_key, "1", timeout=1)
+    if was_added:
+        return None
+    return Response(
+        {"detail": "Too many geocoding requests. Please slow down."},
+        status=status.HTTP_429_TOO_MANY_REQUESTS,
+    )
+
+
+def _fetch_nominatim_json(endpoint, params):
+    encoded_params = urlencode(params)
+    cache_key = f"nominatim:{endpoint}:{encoded_params}"
+    cached = cache.get(cache_key)
+    if cached is not None:
+        return cached
+
+    request = Request(
+        f"https://nominatim.openstreetmap.org/{endpoint}?{encoded_params}",
+        headers={
+            "User-Agent": settings.GEOCODING_USER_AGENT,
+            "Accept-Language": "en",
+        },
+    )
+    with urlopen(request, timeout=10) as response:
+        data = json.loads(response.read().decode("utf-8"))
+    cache.set(cache_key, data, timeout=300)
+    return data
 
 
 def _build_route_summary(current_location, pickup_location, dropoff_location):

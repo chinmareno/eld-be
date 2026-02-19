@@ -168,3 +168,7 @@ JWT_AUTH_COOKIE = 'access_token'
 JWT_AUTH_REFRESH_COOKIE = 'refresh_token'
 JWT_COOKIE_SECURE = parse_bool(os.getenv("DJANGO_JWT_COOKIE_SECURE"), False)
 JWT_COOKIE_SAMESITE = os.getenv("DJANGO_JWT_COOKIE_SAMESITE", "Lax")
+GEOCODING_USER_AGENT = os.getenv(
+    "GEOCODING_USER_AGENT",
+    "spotter-eld/1.0 (development)",
+)
