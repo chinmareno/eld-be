@@ -6,7 +6,8 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework_simplejwt.tokens import RefreshToken
 
-from .serializer import LoginSerializer, UserSerializer
+from .models import Trip
+from .serializer import LoginSerializer, TripCreateSerializer, UserSerializer
 
 
 def _token_max_age(setting_name):
@@ -96,3 +97,26 @@ class MeView(APIView):
 
     def get(self, request):
         return Response({"user": UserSerializer(request.user).data}, status=status.HTTP_200_OK)
+
+
+class TripCreateView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        serializer = TripCreateSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        trip = Trip.objects.create(
+            user=request.user,
+            cycle_used_hours=request.user.current_cycle_used,
+            current_status="off_duty",
+        )
+
+        return Response(
+            {
+                "trip_id": str(trip.id),
+                "current_status": trip.current_status,
+                "cycle_used_hours": str(trip.cycle_used_hours),
+            },
+            status=status.HTTP_201_CREATED,
+        )
