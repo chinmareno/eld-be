@@ -202,10 +202,17 @@ GEOCODING_USER_AGENT = os.getenv(
     "GEOCODING_USER_AGENT",
     "spotter-eld/1.0 (development)",
 )
+POI_USER_AGENT = os.getenv(
+    "POI_USER_AGENT",
+    "spotter-eld/1.0 (development)",
+)
 ROUTING_USER_AGENT = os.getenv(
     "ROUTING_USER_AGENT",
     "spotter-eld/1.0 (development)",
 )
+POI_BASE_URL = os.getenv("POI_BASE_URL", "https://overpass-api.de/api/interpreter")
+POI_DEFAULT_RADIUS_KM = max(1, parse_int(os.getenv("POI_DEFAULT_RADIUS_KM"), 15))
+POI_DEFAULT_LIMIT_PER_CATEGORY = max(1, parse_int(os.getenv("POI_DEFAULT_LIMIT_PER_CATEGORY"), 3))
 ORS_API_KEY = os.getenv("ORS_API_KEY", "")
 ORS_DIRECTIONS_PROFILE = os.getenv("ORS_DIRECTIONS_PROFILE", "driving-hgv")
 ORS_BASE_URL = os.getenv("ORS_BASE_URL", "https://api.openrouteservice.org").rstrip("/")

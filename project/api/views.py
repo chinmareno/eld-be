@@ -1,5 +1,7 @@
 import json
+import hashlib
 import logging
+import math
 import time
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode
@@ -204,6 +206,49 @@ class GeocodeReverseView(APIView):
             "lng": lng,
         }
         return Response({"result": result}, status=status.HTTP_200_OK)
+
+
+class NearbyPoiView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        try:
+            lat = float(request.query_params.get("lat"))
+            lng = float(request.query_params.get("lng"))
+        except (TypeError, ValueError):
+            return Response(
+                {"detail": "Invalid coordinates."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        radius_km = _parse_int_in_range(
+            request.query_params.get("radius_km"),
+            default=settings.POI_DEFAULT_RADIUS_KM,
+            minimum=1,
+            maximum=50,
+        )
+        limit_per_category = _parse_int_in_range(
+            request.query_params.get("limit"),
+            default=settings.POI_DEFAULT_LIMIT_PER_CATEGORY,
+            minimum=1,
+            maximum=10,
+        )
+
+        try:
+            results = _fetch_nearby_pois(
+                lat=lat,
+                lng=lng,
+                radius_km=radius_km,
+                limit_per_category=limit_per_category,
+            )
+        except Exception as exc:
+            logger.warning("Unable to fetch nearby POIs: %s", exc)
+            return Response(
+                {"detail": "Unable to load nearby fuel and parking points."},
+                status=status.HTTP_503_SERVICE_UNAVAILABLE,
+            )
+
+        return Response({"results": results}, status=status.HTTP_200_OK)
 
 
 class TripCreateView(APIView):
@@ -432,6 +477,149 @@ def _check_geocode_rate_limit(request):
         {"detail": "Too many geocoding requests. Please slow down."},
         status=status.HTTP_429_TOO_MANY_REQUESTS,
     )
+
+
+def _parse_int_in_range(raw_value, default, minimum, maximum):
+    if raw_value is None:
+        return default
+    try:
+        parsed = int(str(raw_value).strip())
+    except (TypeError, ValueError):
+        return default
+    return max(minimum, min(maximum, parsed))
+
+
+def _build_overpass_query(lat, lng, radius_meters):
+    lat_text = f"{lat:.6f}"
+    lng_text = f"{lng:.6f}"
+    return f"""
+[out:json][timeout:20];
+(
+  nwr["amenity"="fuel"](around:{radius_meters},{lat_text},{lng_text});
+  nwr["amenity"="parking"](around:{radius_meters},{lat_text},{lng_text});
+  nwr["highway"="rest_area"](around:{radius_meters},{lat_text},{lng_text});
+  nwr["highway"="services"](around:{radius_meters},{lat_text},{lng_text});
+);
+out center;
+""".strip()
+
+
+def _fetch_overpass_json(query):
+    query_hash = hashlib.sha256(query.encode("utf-8")).hexdigest()
+    cache_key = f"overpass:{query_hash}"
+    cached = cache.get(cache_key)
+    if cached is not None:
+        return cached
+
+    payload = urlencode({"data": query}).encode("utf-8")
+    request = Request(
+        settings.POI_BASE_URL,
+        data=payload,
+        method="POST",
+        headers={
+            "Content-Type": "application/x-www-form-urlencoded",
+            "User-Agent": settings.POI_USER_AGENT,
+        },
+    )
+
+    with urlopen(request, timeout=15) as response:
+        data = json.loads(response.read().decode("utf-8"))
+
+    cache.set(cache_key, data, timeout=300)
+    return data
+
+
+def _extract_poi_coordinate(element):
+    lat = element.get("lat")
+    lng = element.get("lon")
+    if isinstance(lat, (int, float)) and isinstance(lng, (int, float)):
+        return float(lat), float(lng)
+
+    center = element.get("center")
+    if isinstance(center, dict):
+        center_lat = center.get("lat")
+        center_lng = center.get("lon")
+        if isinstance(center_lat, (int, float)) and isinstance(center_lng, (int, float)):
+            return float(center_lat), float(center_lng)
+
+    return None
+
+
+def _haversine_distance_miles(origin_lat, origin_lng, destination_lat, destination_lng):
+    lat1 = math.radians(origin_lat)
+    lng1 = math.radians(origin_lng)
+    lat2 = math.radians(destination_lat)
+    lng2 = math.radians(destination_lng)
+    delta_lat = lat2 - lat1
+    delta_lng = lng2 - lng1
+
+    a = math.sin(delta_lat / 2) ** 2 + math.cos(lat1) * math.cos(lat2) * math.sin(delta_lng / 2) ** 2
+    c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
+    miles = 3958.7613 * c
+    return miles
+
+
+def _fetch_nearby_pois(lat, lng, radius_km, limit_per_category):
+    radius_meters = int(radius_km * 1000)
+    query = _build_overpass_query(lat, lng, radius_meters)
+    data = _fetch_overpass_json(query)
+    elements = data.get("elements")
+    if not isinstance(elements, list):
+        return []
+
+    by_category = {"fuel": [], "parking": [], "rest_area": []}
+
+    for element in elements:
+        if not isinstance(element, dict):
+            continue
+        tags = element.get("tags")
+        if not isinstance(tags, dict):
+            continue
+
+        category = None
+        if tags.get("amenity") == "fuel":
+            category = "fuel"
+        elif tags.get("amenity") == "parking":
+            category = "parking"
+        elif tags.get("highway") in {"rest_area", "services"}:
+            category = "rest_area"
+
+        if category is None:
+            continue
+
+        coordinate = _extract_poi_coordinate(element)
+        if coordinate is None:
+            continue
+
+        poi_lat, poi_lng = coordinate
+        distance_miles = _haversine_distance_miles(lat, lng, poi_lat, poi_lng)
+        name = tags.get("name")
+        if not name:
+            if category == "fuel":
+                name = "Fuel stop"
+            elif category == "parking":
+                name = "Parking area"
+            else:
+                name = "Rest area"
+
+        by_category[category].append(
+            {
+                "id": f"{element.get('type', 'node')}-{element.get('id', 'unknown')}",
+                "name": name,
+                "category": category,
+                "lat": round(poi_lat, 6),
+                "lng": round(poi_lng, 6),
+                "distance_miles": round(distance_miles, 2),
+            }
+        )
+
+    ordered = []
+    for category in ("fuel", "parking", "rest_area"):
+        category_items = by_category[category]
+        category_items.sort(key=lambda item: item["distance_miles"])
+        ordered.extend(category_items[:limit_per_category])
+
+    return ordered
 
 
 def _fetch_nominatim_json(endpoint, params):
