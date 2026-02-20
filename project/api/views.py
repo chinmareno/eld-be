@@ -460,8 +460,8 @@ class EldLogsView(APIView):
 
     def get(self, request, trip_id):
         trip = _get_trip_or_404(request.user, trip_id)
-        events = list(trip.status_events.order_by("start_time"))
-        logs = _build_eld_logs(events)
+        segments = _collect_eld_segments(trip)
+        logs = _build_eld_logs(segments)
         return Response({"trip_id": str(trip.id), "logs": logs}, status=status.HTTP_200_OK)
 
 
@@ -789,27 +789,115 @@ def _estimate_stops(duration_hours):
     return stops
 
 
-def _build_eld_logs(events):
+def _collect_eld_segments(trip):
+    segments = []
+    for event in trip.status_events.order_by("start_time"):
+        if event.end_time <= event.start_time:
+            continue
+        segments.append(
+            {
+                "status": event.status,
+                "start_time": event.start_time,
+                "end_time": event.end_time,
+            }
+        )
+
+    if trip.current_status is not None and trip.current_status_started_at is not None:
+        segment_end = trip.completed_at or timezone.now()
+        if segment_end > trip.current_status_started_at:
+            segments.append(
+                {
+                    "status": trip.current_status,
+                    "start_time": trip.current_status_started_at,
+                    "end_time": segment_end,
+                }
+            )
+
+    segments.sort(key=lambda item: item["start_time"])
+    return segments
+
+
+def _build_eld_logs(segments):
     logs_by_date = {}
-    for event in events:
-        current = timezone.localtime(event.start_time)
-        end = timezone.localtime(event.end_time)
+    for segment in segments:
+        current = timezone.localtime(segment["start_time"])
+        end = timezone.localtime(segment["end_time"])
+        if end <= current:
+            continue
+
+        status_value = segment["status"]
         while current.date() <= end.date():
             day_end = current.replace(hour=23, minute=59, second=59, microsecond=999999)
             segment_end = min(end, day_end)
             key = current.date().isoformat()
             logs_by_date.setdefault(key, []).append(
                 {
-                    "status": event.status,
-                    "start_time": current.isoformat(),
-                    "end_time": segment_end.isoformat(),
+                    "status": status_value,
+                    "start_time": current,
+                    "end_time": segment_end,
                 }
             )
             current = segment_end + timedelta(microseconds=1)
-    return [
-        {"date": date, "entries": entries}
-        for date, entries in sorted(logs_by_date.items(), key=lambda item: item[0])
-    ]
+
+    normalized_logs = []
+    for date, entries in sorted(logs_by_date.items(), key=lambda item: item[0]):
+        sorted_entries = sorted(entries, key=lambda entry: entry["start_time"])
+        if not sorted_entries:
+            continue
+
+        day_start = sorted_entries[0]["start_time"].replace(hour=0, minute=0, second=0, microsecond=0)
+        day_end = day_start.replace(hour=23, minute=59, second=59, microsecond=999999)
+
+        normalized_entries = []
+        cursor = day_start
+        for entry in sorted_entries:
+            start_time = max(day_start, entry["start_time"])
+            end_time = min(day_end, entry["end_time"])
+            if end_time <= start_time:
+                continue
+
+            if start_time > cursor:
+                normalized_entries.append(
+                    {
+                        "status": Trip.STATUS_OFF_DUTY,
+                        "start_time": cursor,
+                        "end_time": start_time,
+                    }
+                )
+
+            normalized_entries.append(
+                {
+                    "status": entry["status"],
+                    "start_time": start_time,
+                    "end_time": end_time,
+                }
+            )
+            cursor = end_time
+
+        if cursor < day_end:
+            normalized_entries.append(
+                {
+                    "status": Trip.STATUS_OFF_DUTY,
+                    "start_time": cursor,
+                    "end_time": day_end,
+                }
+            )
+
+        normalized_logs.append(
+            {
+                "date": date,
+                "entries": [
+                    {
+                        "status": entry["status"],
+                        "start_time": entry["start_time"].isoformat(),
+                        "end_time": entry["end_time"].isoformat(),
+                    }
+                    for entry in normalized_entries
+                ],
+            }
+        )
+
+    return normalized_logs
 
 
 def _calculate_warnings(trip):
