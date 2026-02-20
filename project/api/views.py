@@ -1,5 +1,7 @@
-﻿import json
+import json
+import logging
 import time
+from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 
@@ -27,6 +29,8 @@ from .serializer import (
 )
 from datetime import timedelta
 from decimal import Decimal
+
+logger = logging.getLogger(__name__)
 
 
 def _token_max_age(setting_name):
@@ -251,6 +255,30 @@ class TripRouteView(APIView):
 
     def get(self, request, trip_id):
         trip = _get_trip_or_404(request.user, trip_id)
+        if (
+            trip.route_polyline is None
+            or trip.route_distance_miles is None
+            or trip.route_duration_hours is None
+        ):
+            refreshed_route = _build_route_summary(
+                (float(trip.current_location_lat), float(trip.current_location_lng)),
+                (float(trip.pickup_location_lat), float(trip.pickup_location_lng)),
+                (float(trip.dropoff_location_lat), float(trip.dropoff_location_lng)),
+            )
+            if refreshed_route:
+                trip.route_distance_miles = refreshed_route.get("distance_miles")
+                trip.route_duration_hours = refreshed_route.get("duration_hours")
+                trip.route_polyline = refreshed_route.get("polyline")
+                trip.route_stops = refreshed_route.get("stops")
+                trip.save(
+                    update_fields=[
+                        "route_distance_miles",
+                        "route_duration_hours",
+                        "route_polyline",
+                        "route_stops",
+                    ]
+                )
+
         return Response(
             {
                 "distance_miles": trip.route_distance_miles,
@@ -427,15 +455,18 @@ def _build_route_summary(current_location, pickup_location, dropoff_location):
 
     try:
         route = _fetch_route(coords)
-    except Exception:
+    except Exception as exc:
+        logger.warning("Unable to generate route summary: %s", exc)
         return {}
 
     if not route:
+        logger.warning("Route provider returned no route geometry.")
         return {}
 
     distance_meters = route.get("distance_meters")
     duration_seconds = route.get("duration_seconds")
     if not isinstance(distance_meters, (int, float)) or not isinstance(duration_seconds, (int, float)):
+        logger.warning("Route summary missing numeric distance or duration.")
         return {}
 
     distance_miles = Decimal(str(distance_meters)) / Decimal("1609.344")
@@ -452,7 +483,7 @@ def _build_route_summary(current_location, pickup_location, dropoff_location):
 
 def _fetch_route(coords):
     if not settings.ORS_API_KEY:
-        return None
+        raise RuntimeError("ORS_API_KEY is not configured.")
 
     ors_coordinates = [[lon, lat] for lat, lon in coords]
     payload = {"coordinates": ors_coordinates}
@@ -467,8 +498,14 @@ def _fetch_route(coords):
             "User-Agent": settings.ROUTING_USER_AGENT,
         },
     )
-    with urlopen(request, timeout=10) as response:
-        data = json.loads(response.read().decode("utf-8"))
+    try:
+        with urlopen(request, timeout=10) as response:
+            data = json.loads(response.read().decode("utf-8"))
+    except HTTPError as exc:
+        detail = exc.read().decode("utf-8", errors="ignore")
+        raise RuntimeError(f"ORS request failed with HTTP {exc.code}: {detail}") from exc
+    except URLError as exc:
+        raise RuntimeError(f"ORS request failed: {exc.reason}") from exc
     features = data.get("features")
     if not features:
         return None
