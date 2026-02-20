@@ -1,4 +1,5 @@
 ﻿import json
+import time
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 
@@ -386,9 +387,14 @@ def _get_client_ip(request):
 
 def _check_geocode_rate_limit(request):
     client_ip = _get_client_ip(request)
-    cache_key = f"geocode-rate:{client_ip}"
-    was_added = cache.add(cache_key, "1", timeout=1)
-    if was_added:
+    second_bucket = int(time.time())
+    cache_key = f"geocode-rate:{client_ip}:{second_bucket}"
+    current_count = cache.get(cache_key)
+    if current_count is None:
+        cache.set(cache_key, 1, timeout=2)
+        return None
+    if current_count < 3:
+        cache.set(cache_key, current_count + 1, timeout=2)
         return None
     return Response(
         {"detail": "Too many geocoding requests. Please slow down."},
