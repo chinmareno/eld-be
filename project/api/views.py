@@ -6,6 +6,7 @@ import time
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
+from zoneinfo import ZoneInfo
 
 from django.conf import settings
 from django.contrib.auth import authenticate
@@ -29,10 +30,14 @@ from .serializer import (
     TripSummarySerializer,
     UserSerializer,
 )
-from datetime import timedelta
+from datetime import date, timedelta
 from decimal import Decimal
 
 logger = logging.getLogger(__name__)
+
+ELD_DEFAULT_LIMIT = 20
+ELD_MAX_LIMIT = 100
+ELD_MAX_RANGE_DAYS = 30
 
 
 def _token_max_age(setting_name):
@@ -461,8 +466,71 @@ class EldLogsView(APIView):
     def get(self, request, trip_id):
         trip = _get_trip_or_404(request.user, trip_id)
         segments = _collect_eld_segments(trip)
-        logs = _build_eld_logs(segments)
+        logs = _build_eld_logs(segments, tzinfo=_get_user_timezone(request.user))
         return Response({"trip_id": str(trip.id), "logs": logs}, status=status.HTTP_200_OK)
+
+
+class CompletedEldLogsView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        try:
+            start_date = _parse_iso_date(
+                request.query_params.get("start_date"),
+                field_name="start_date",
+            )
+            end_date = _parse_iso_date(
+                request.query_params.get("end_date"),
+                field_name="end_date",
+            )
+            cursor = _parse_iso_date(
+                request.query_params.get("cursor"),
+                field_name="cursor",
+            )
+        except ValueError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+
+        if start_date and end_date and end_date < start_date:
+            return Response(
+                {"detail": "end_date must be on or after start_date."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        if start_date and end_date and (end_date - start_date).days > ELD_MAX_RANGE_DAYS:
+            return Response(
+                {"detail": f"Date range cannot exceed {ELD_MAX_RANGE_DAYS} days."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        limit = _parse_int_in_range(
+            request.query_params.get("limit"),
+            default=ELD_DEFAULT_LIMIT,
+            minimum=1,
+            maximum=ELD_MAX_LIMIT,
+        )
+
+        logs = _get_completed_eld_logs_desc(
+            request.user,
+            tzinfo=_get_user_timezone(request.user),
+        )
+        filtered_logs = _filter_completed_logs_by_query(
+            logs,
+            start_date=start_date,
+            end_date=end_date,
+            cursor=cursor,
+        )
+
+        page_logs = filtered_logs[:limit]
+        has_more = len(filtered_logs) > limit
+        next_cursor = page_logs[-1]["date"] if has_more and page_logs else None
+
+        return Response(
+            {
+                "logs": page_logs,
+                "has_more": has_more,
+                "next_cursor": next_cursor,
+            },
+            status=status.HTTP_200_OK,
+        )
 
 
 def _get_trip_or_404(user, trip_id):
@@ -481,6 +549,66 @@ def _get_active_trip(user):
         .order_by("-created_at")
         .first()
     )
+
+
+def _parse_iso_date(raw_value, *, field_name):
+    if raw_value in (None, ""):
+        return None
+    try:
+        return date.fromisoformat(str(raw_value))
+    except ValueError as exc:
+        raise ValueError(f"{field_name} must be in YYYY-MM-DD format.") from exc
+
+
+def _get_completed_eld_logs_desc(user, *, tzinfo):
+    segments = []
+    events = StatusEvent.objects.filter(
+        trip__user=user,
+        trip__completed_at__isnull=False,
+    ).order_by("start_time")
+
+    for event in events:
+        if event.end_time <= event.start_time:
+            continue
+        segments.append(
+            {
+                "status": event.status,
+                "start_time": event.start_time,
+                "end_time": event.end_time,
+            }
+        )
+
+    logs = _build_eld_logs(segments, tzinfo=tzinfo)
+    logs.reverse()
+    return logs
+
+
+def _filter_completed_logs_by_query(logs, *, start_date, end_date, cursor):
+    start_text = start_date.isoformat() if start_date else None
+    end_text = end_date.isoformat() if end_date else None
+    cursor_text = cursor.isoformat() if cursor else None
+
+    filtered = []
+    for log in logs:
+        log_date = log["date"]
+        if start_text and log_date < start_text:
+            continue
+        if end_text and log_date > end_text:
+            continue
+        if cursor_text and log_date >= cursor_text:
+            continue
+        filtered.append(log)
+    return filtered
+
+
+def _get_user_timezone(user):
+    tz_name = getattr(user, "home_terminal_tz", None)
+    if not tz_name:
+        return timezone.get_current_timezone()
+    try:
+        return ZoneInfo(tz_name)
+    except Exception:
+        return timezone.get_current_timezone()
 
 
 def _get_client_ip(request):
@@ -817,11 +945,11 @@ def _collect_eld_segments(trip):
     return segments
 
 
-def _build_eld_logs(segments):
+def _build_eld_logs(segments, *, tzinfo):
     logs_by_date = {}
     for segment in segments:
-        current = timezone.localtime(segment["start_time"])
-        end = timezone.localtime(segment["end_time"])
+        current = timezone.localtime(segment["start_time"], timezone=tzinfo)
+        end = timezone.localtime(segment["end_time"], timezone=tzinfo)
         if end <= current:
             continue
 
