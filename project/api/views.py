@@ -954,9 +954,16 @@ def _build_eld_logs(segments, *, tzinfo):
             continue
 
         status_value = segment["status"]
-        while current.date() <= end.date():
-            day_end = current.replace(hour=23, minute=59, second=59, microsecond=999999)
-            segment_end = min(end, day_end)
+        while current < end:
+            next_day_start = (current + timedelta(days=1)).replace(
+                hour=0,
+                minute=0,
+                second=0,
+                microsecond=0,
+            )
+            segment_end = min(end, next_day_start)
+            if segment_end <= current:
+                break
             key = current.date().isoformat()
             logs_by_date.setdefault(key, []).append(
                 {
@@ -965,7 +972,7 @@ def _build_eld_logs(segments, *, tzinfo):
                     "end_time": segment_end,
                 }
             )
-            current = segment_end + timedelta(microseconds=1)
+            current = segment_end
 
     normalized_logs = []
     for date, entries in sorted(logs_by_date.items(), key=lambda item: item[0]):
