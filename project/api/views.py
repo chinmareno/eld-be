@@ -427,8 +427,13 @@ def _build_route_summary(current_location, pickup_location, dropoff_location):
     if not route:
         return {}
 
-    distance_miles = Decimal(route["distance_meters"]) / Decimal("1609.344")
-    duration_hours = Decimal(route["duration_seconds"]) / Decimal("3600")
+    distance_meters = route.get("distance_meters")
+    duration_seconds = route.get("duration_seconds")
+    if not isinstance(distance_meters, (int, float)) or not isinstance(duration_seconds, (int, float)):
+        return {}
+
+    distance_miles = Decimal(str(distance_meters)) / Decimal("1609.344")
+    duration_hours = Decimal(str(duration_seconds)) / Decimal("3600")
     stops = _estimate_stops(float(duration_hours))
 
     return {
@@ -440,22 +445,52 @@ def _build_route_summary(current_location, pickup_location, dropoff_location):
 
 
 def _fetch_route(coords):
-    coords_str = ";".join([f"{lon},{lat}" for lat, lon in coords])
-    params = urlencode({"overview": "full", "geometries": "polyline"})
+    if not settings.ORS_API_KEY:
+        return None
+
+    ors_coordinates = [[lon, lat] for lat, lon in coords]
+    payload = {"coordinates": ors_coordinates}
     request = Request(
-        f"https://router.project-osrm.org/route/v1/driving/{coords_str}?{params}",
-        headers={"User-Agent": "spotter-eld/1.0"},
+        settings.ORS_DIRECTIONS_URL,
+        data=json.dumps(payload).encode("utf-8"),
+        method="POST",
+        headers={
+            "Authorization": settings.ORS_API_KEY,
+            "Content-Type": "application/json",
+            "Accept": "application/json, application/geo+json",
+            "User-Agent": settings.ROUTING_USER_AGENT,
+        },
     )
     with urlopen(request, timeout=10) as response:
         data = json.loads(response.read().decode("utf-8"))
-    routes = data.get("routes")
-    if not routes:
+    features = data.get("features")
+    if not features:
         return None
-    route = routes[0]
+    route = features[0]
+    properties = route.get("properties", {})
+    summary = properties.get("summary", {})
+    geometry = route.get("geometry", {})
+    coordinates = geometry.get("coordinates") or []
+    if not coordinates:
+        return None
+
+    lat_lng_polyline = []
+    for point in coordinates:
+        if not isinstance(point, list) or len(point) < 2:
+            continue
+        lng = point[0]
+        lat = point[1]
+        if not isinstance(lat, (int, float)) or not isinstance(lng, (int, float)):
+            continue
+        lat_lng_polyline.append([lat, lng])
+
+    if not lat_lng_polyline:
+        return None
+
     return {
-        "distance_meters": route.get("distance"),
-        "duration_seconds": route.get("duration"),
-        "polyline": route.get("geometry"),
+        "distance_meters": summary.get("distance"),
+        "duration_seconds": summary.get("duration"),
+        "polyline": json.dumps(lat_lng_polyline),
     }
 
 

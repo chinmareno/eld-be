@@ -172,3 +172,11 @@ GEOCODING_USER_AGENT = os.getenv(
     "GEOCODING_USER_AGENT",
     "spotter-eld/1.0 (development)",
 )
+ROUTING_USER_AGENT = os.getenv(
+    "ROUTING_USER_AGENT",
+    "spotter-eld/1.0 (development)",
+)
+ORS_API_KEY = os.getenv("ORS_API_KEY", "")
+ORS_DIRECTIONS_PROFILE = os.getenv("ORS_DIRECTIONS_PROFILE", "driving-hgv")
+ORS_BASE_URL = os.getenv("ORS_BASE_URL", "https://api.openrouteservice.org").rstrip("/")
+ORS_DIRECTIONS_URL = f"{ORS_BASE_URL}/v2/directions/{ORS_DIRECTIONS_PROFILE}/geojson"
