@@ -281,6 +281,17 @@ class TripCreateView(APIView):
         serializer.is_valid(raise_exception=True)
 
         data = serializer.validated_data
+        latest_completed_at = _get_latest_completed_at(request.user)
+        if latest_completed_at is not None and data["start_time"] < latest_completed_at:
+            return Response(
+                {
+                    "detail": (
+                        "Start time must be on or after your most recent completed trip time."
+                    )
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
         route_summary = _build_route_summary(
             (float(data["current_location_lat"]), float(data["current_location_lng"])),
             (float(data["pickup_location_lat"]), float(data["pickup_location_lng"])),
@@ -547,6 +558,18 @@ def _get_active_trip(user):
             completed_at__isnull=True,
         )
         .order_by("-created_at")
+        .first()
+    )
+
+
+def _get_latest_completed_at(user):
+    return (
+        Trip.objects.filter(
+            user=user,
+            completed_at__isnull=False,
+        )
+        .order_by("-completed_at")
+        .values_list("completed_at", flat=True)
         .first()
     )
 
