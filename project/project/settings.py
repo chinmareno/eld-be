@@ -54,6 +54,15 @@ def parse_csv(value: str, default: list[str]) -> list[str]:
     return [item.strip() for item in value.split(",") if item.strip()]
 
 
+def parse_int(value: str, default: int) -> int:
+    if value is None:
+        return default
+    try:
+        return int(value.strip())
+    except (TypeError, ValueError):
+        return default
+
+
 # SECURITY WARNING: keep the secret key used in production secret!
 SECRET_KEY = os.getenv(
     "DJANGO_SECRET_KEY",
@@ -201,3 +210,4 @@ ORS_API_KEY = os.getenv("ORS_API_KEY", "")
 ORS_DIRECTIONS_PROFILE = os.getenv("ORS_DIRECTIONS_PROFILE", "driving-hgv")
 ORS_BASE_URL = os.getenv("ORS_BASE_URL", "https://api.openrouteservice.org").rstrip("/")
 ORS_DIRECTIONS_URL = f"{ORS_BASE_URL}/v2/directions/{ORS_DIRECTIONS_PROFILE}/geojson"
+ORS_SNAP_RADIUS_METERS = max(350, parse_int(os.getenv("ORS_SNAP_RADIUS_METERS"), 5000))

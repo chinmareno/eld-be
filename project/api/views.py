@@ -490,7 +490,11 @@ def _fetch_route(coords):
         raise RuntimeError("ORS_API_KEY is not configured.")
 
     ors_coordinates = [[lon, lat] for lat, lon in coords]
-    payload = {"coordinates": ors_coordinates}
+    payload = {
+        "coordinates": ors_coordinates,
+        # Allow snapping waypoints that are slightly off-road (map center picks often land on parcels).
+        "radiuses": [settings.ORS_SNAP_RADIUS_METERS] * len(ors_coordinates),
+    }
     request = Request(
         settings.ORS_DIRECTIONS_URL,
         data=json.dumps(payload).encode("utf-8"),
