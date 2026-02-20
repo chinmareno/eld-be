@@ -38,6 +38,9 @@ logger = logging.getLogger(__name__)
 ELD_DEFAULT_LIMIT = 20
 ELD_MAX_LIMIT = 100
 ELD_MAX_RANGE_DAYS = 30
+PICKUP_DROPOFF_BUFFER_HOURS = Decimal("1.0")
+FUEL_STOP_INTERVAL_MILES = 1000
+FUEL_STOP_DURATION_HOURS = 0.5
 
 
 def _token_max_age(setting_name):
@@ -841,12 +844,16 @@ def _build_route_summary(current_location, pickup_location, dropoff_location):
         return {}
 
     distance_miles = Decimal(str(distance_meters)) / Decimal("1609.344")
-    duration_hours = Decimal(str(duration_seconds)) / Decimal("3600")
-    stops = _estimate_stops(float(duration_hours))
+    driving_duration_hours = Decimal(str(duration_seconds)) / Decimal("3600")
+    planned_duration_hours = driving_duration_hours + PICKUP_DROPOFF_BUFFER_HOURS
+    stops = _estimate_stops(
+        driving_duration_hours=float(driving_duration_hours),
+        distance_miles=float(distance_miles),
+    )
 
     return {
         "distance_miles": round(distance_miles, 2),
-        "duration_hours": round(duration_hours, 2),
+        "duration_hours": round(planned_duration_hours, 2),
         "polyline": route.get("polyline"),
         "stops": stops,
     }
@@ -912,31 +919,63 @@ def _fetch_route(coords):
     }
 
 
-def _estimate_stops(duration_hours):
+def _estimate_stops(*, driving_duration_hours, distance_miles):
     stops = []
-    driving_hours = 0.0
-    while driving_hours + 8 <= duration_hours:
-        driving_hours += 8
+    if driving_duration_hours <= 0:
+        return stops
+
+    # Schedule fuel stops at least every 1,000 miles over the planned route.
+    if distance_miles > 0:
+        fuel_stop_count = int(distance_miles // FUEL_STOP_INTERVAL_MILES)
+        for index in range(1, fuel_stop_count + 1):
+            marker_miles = index * FUEL_STOP_INTERVAL_MILES
+            if marker_miles >= distance_miles:
+                break
+            progress_ratio = marker_miles / distance_miles
+            eta_hours = max(0.0, min(driving_duration_hours, driving_duration_hours * progress_ratio))
+            stops.append(
+                {
+                    "type": "fuel",
+                    "eta_hours": round(eta_hours, 2),
+                    "duration_hours": FUEL_STOP_DURATION_HOURS,
+                    "label": f"Fuel stop near {marker_miles:,} miles",
+                }
+            )
+
+    break_hour = 8.0
+    while break_hour <= driving_duration_hours:
         stops.append(
             {
                 "type": "break",
-                "eta_hours": round(driving_hours, 2),
+                "eta_hours": round(break_hour, 2),
                 "duration_hours": 0.5,
                 "label": "30-min break",
             }
         )
-        if driving_hours + 3 <= duration_hours:
-            driving_hours += 3
-            if driving_hours >= 11:
-                stops.append(
-                    {
-                        "type": "rest",
-                        "eta_hours": round(driving_hours, 2),
-                        "duration_hours": 10,
-                        "label": "10-hour rest",
-                    }
-                )
-                driving_hours += 10
+        break_hour += 8
+
+    # Show the first 10-hour reset once, then only show the next reset at 70-hour cycle threshold.
+    if driving_duration_hours >= 11:
+        stops.append(
+            {
+                "type": "rest",
+                "eta_hours": 11.0,
+                "duration_hours": 10,
+                "label": "10-hour off-duty reset",
+            }
+        )
+
+    if driving_duration_hours >= 70:
+        stops.append(
+            {
+                "type": "rest",
+                "eta_hours": 70.0,
+                "duration_hours": 10,
+                "label": "10-hour cycle reset (70-hour limit)",
+            }
+        )
+
+    stops.sort(key=lambda item: (item["eta_hours"], item["type"]))
     return stops
 
 
