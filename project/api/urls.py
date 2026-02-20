@@ -12,6 +12,7 @@ from .views import (
     StatusEventCreateView,
     TripCompleteView,
     TripCreateView,
+    TripRoutePreviewView,
     TripRouteView,
     TripSummaryView,
 )
@@ -24,6 +25,7 @@ urlpatterns=[
    path("geocode/reverse/", GeocodeReverseView.as_view(), name="geocode-reverse"),
    path("pois/nearby/", NearbyPoiView.as_view(), name="nearby-pois"),
    path("trips/active/", ActiveTripView.as_view(), name="trip-active"),
+   path("trips/preview-route/", TripRoutePreviewView.as_view(), name="trip-route-preview"),
    path("trips/", TripCreateView.as_view(), name="trip-create"),
    path("trips/<uuid:trip_id>/", TripSummaryView.as_view(), name="trip-summary"),
    path("trips/<uuid:trip_id>/route/", TripRouteView.as_view(), name="trip-route"),

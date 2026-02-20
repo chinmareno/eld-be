@@ -327,6 +327,31 @@ class TripCreateView(APIView):
         )
 
 
+class TripRoutePreviewView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        serializer = TripCreateSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        data = serializer.validated_data
+
+        route_summary = _build_route_summary(
+            (float(data["current_location_lat"]), float(data["current_location_lng"])),
+            (float(data["pickup_location_lat"]), float(data["pickup_location_lng"])),
+            (float(data["dropoff_location_lat"]), float(data["dropoff_location_lng"])),
+        )
+
+        return Response(
+            {
+                "distance_miles": route_summary.get("distance_miles"),
+                "eta_hours": route_summary.get("duration_hours"),
+                "stops": route_summary.get("stops", []),
+                "polyline": route_summary.get("polyline"),
+            },
+            status=status.HTTP_200_OK,
+        )
+
+
 class TripSummaryView(APIView):
     permission_classes = [IsAuthenticated]
 
