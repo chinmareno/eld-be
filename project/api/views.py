@@ -73,6 +73,7 @@ def _clear_auth_cookies(response):
 
 
 class LoginView(APIView):
+    authentication_classes = []
     permission_classes = [AllowAny]
 
     def post(self, request):
@@ -104,6 +105,7 @@ class LoginView(APIView):
 
 
 class LogoutView(APIView):
+    authentication_classes = []
     permission_classes = [AllowAny]
 
     def post(self, request):
@@ -123,6 +125,7 @@ class MeView(APIView):
 
 
 class GeocodeSearchView(APIView):
+    authentication_classes = []
     permission_classes = [AllowAny]
 
     def get(self, request):
@@ -165,6 +168,7 @@ class GeocodeSearchView(APIView):
 
 
 class GeocodeReverseView(APIView):
+    authentication_classes = []
     permission_classes = [AllowAny]
 
     def get(self, request):
