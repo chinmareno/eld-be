@@ -251,10 +251,27 @@ class NearbyPoiView(APIView):
         return Response({"results": results}, status=status.HTTP_200_OK)
 
 
+class ActiveTripView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        trip = _get_active_trip(request.user)
+        if trip is None:
+            return Response({"trip": None}, status=status.HTTP_200_OK)
+        return Response({"trip": TripSummarySerializer(trip).data}, status=status.HTTP_200_OK)
+
+
 class TripCreateView(APIView):
     permission_classes = [IsAuthenticated]
 
     def post(self, request):
+        active_trip = _get_active_trip(request.user)
+        if active_trip is not None:
+            return Response(
+                {"detail": "You already have an active trip. Complete it before creating a new one."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
         serializer = TripCreateSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
 
@@ -453,6 +470,17 @@ def _get_trip_or_404(user, trip_id):
         return Trip.objects.get(id=trip_id, user=user)
     except Trip.DoesNotExist:
         raise NotFound(detail="Trip not found.")
+
+
+def _get_active_trip(user):
+    return (
+        Trip.objects.filter(
+            user=user,
+            completed_at__isnull=True,
+        )
+        .order_by("-created_at")
+        .first()
+    )
 
 
 def _get_client_ip(request):

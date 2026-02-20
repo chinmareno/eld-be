@@ -1,5 +1,6 @@
 from django.urls import path
 from .views import (
+    ActiveTripView,
     EldLogsView,
     GeocodeReverseView,
     GeocodeSearchView,
@@ -21,6 +22,7 @@ urlpatterns=[
    path("geocode/search/", GeocodeSearchView.as_view(), name="geocode-search"),
    path("geocode/reverse/", GeocodeReverseView.as_view(), name="geocode-reverse"),
    path("pois/nearby/", NearbyPoiView.as_view(), name="nearby-pois"),
+   path("trips/active/", ActiveTripView.as_view(), name="trip-active"),
    path("trips/", TripCreateView.as_view(), name="trip-create"),
    path("trips/<uuid:trip_id>/", TripSummaryView.as_view(), name="trip-summary"),
    path("trips/<uuid:trip_id>/route/", TripRouteView.as_view(), name="trip-route"),
