@@ -14,13 +14,10 @@ from datetime import timedelta
 import os
 import shutil
 from pathlib import Path
-from urllib.parse import parse_qsl, unquote, urlparse
-
-from django.core.exceptions import ImproperlyConfigured
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
-ENV_FILE = BASE_DIR.parent / ".env"
+ENV_FILE = BASE_DIR / ".env"
 
 
 def load_env_file(path: Path) -> None:
@@ -65,40 +62,6 @@ def parse_int(value: str, default: int) -> int:
         return int(value.strip())
     except (TypeError, ValueError):
         return default
-
-
-def parse_database_url(database_url: str) -> dict:
-    parsed = urlparse(database_url)
-    scheme = parsed.scheme.lower()
-    if scheme not in {"postgres", "postgresql", "psql", "pgsql"}:
-        raise ImproperlyConfigured(
-            "DATABASE_URL must use postgres:// or postgresql:// scheme."
-        )
-
-    db_name = parsed.path.lstrip("/")
-    if not db_name:
-        raise ImproperlyConfigured("DATABASE_URL must include a database name.")
-
-    config = {
-        "ENGINE": "django.db.backends.postgresql",
-        "NAME": unquote(db_name),
-        "USER": unquote(parsed.username or ""),
-        "PASSWORD": unquote(parsed.password or ""),
-        "HOST": parsed.hostname or "localhost",
-        "PORT": str(parsed.port or 5432),
-        "CONN_MAX_AGE": parse_int(os.getenv("DJANGO_DB_CONN_MAX_AGE"), 60),
-    }
-
-    option_keys = {"sslmode", "sslrootcert", "connect_timeout", "target_session_attrs"}
-    options = {
-        key: value
-        for key, value in parse_qsl(parsed.query, keep_blank_values=False)
-        if key in option_keys and value
-    }
-    if options:
-        config["OPTIONS"] = options
-
-    return config
 
 
 IS_VERCEL = parse_bool(os.getenv("VERCEL"), False)
@@ -168,29 +131,25 @@ WSGI_APPLICATION = 'project.wsgi.app'
 # Database
 # https://docs.djangoproject.com/en/6.0/ref/settings/#databases
 
-database_url = (os.getenv("DATABASE_URL") or "").strip()
-if database_url:
-    DATABASES = {"default": parse_database_url(database_url)}
+default_sqlite_path = BASE_DIR / "db.sqlite3"
+if IS_VERCEL:
+    # Vercel filesystem is read-only except /tmp, so copy the seeded DB once per cold start.
+    vercel_sqlite_path = Path("/tmp/db.sqlite3")
+    if not vercel_sqlite_path.exists() and default_sqlite_path.exists():
+        try:
+            shutil.copy2(default_sqlite_path, vercel_sqlite_path)
+        except OSError:
+            pass
+    sqlite_db_path = vercel_sqlite_path
 else:
-    default_sqlite_path = BASE_DIR / "db.sqlite3"
-    if IS_VERCEL:
-        # Vercel filesystem is read-only except /tmp, so copy the seeded DB once per cold start.
-        vercel_sqlite_path = Path("/tmp/db.sqlite3")
-        if not vercel_sqlite_path.exists() and default_sqlite_path.exists():
-            try:
-                shutil.copy2(default_sqlite_path, vercel_sqlite_path)
-            except OSError:
-                pass
-        sqlite_db_path = vercel_sqlite_path
-    else:
-        sqlite_db_path = default_sqlite_path
+    sqlite_db_path = default_sqlite_path
 
-    DATABASES = {
-        'default': {
-            'ENGINE': 'django.db.backends.sqlite3',
-            'NAME': sqlite_db_path,
-        }
+DATABASES = {
+    'default': {
+        'ENGINE': 'django.db.backends.sqlite3',
+        'NAME': sqlite_db_path,
     }
+}
 
 
 # Password validation
