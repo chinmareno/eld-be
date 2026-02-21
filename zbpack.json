@@ -1,9 +1,9 @@
 {
   "python": {
     "version": "3.13",
-    "package_manager": "pip",
+    "package_manager": "pipenv",
     "entry": "manage.py"
   },
-  "build_command": "pip install -r requirements.txt",
-  "start_command": "python manage.py migrate --noinput && python manage.py bootstrap_superuser && _startup"
+  "build_command": "pipenv install gunicorn && pipenv install",
+  "start_command": "pipenv run python manage.py migrate --noinput && pipenv run python manage.py bootstrap_superuser && pipenv run gunicorn project.wsgi:application --bind 0.0.0.0:$PORT"
 }
