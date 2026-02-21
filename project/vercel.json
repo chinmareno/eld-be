@@ -1,6 +1,6 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
-  "buildCommand": "python manage.py migrate --noinput && python manage.py bootstrap_superuser",
+  "buildCommand": "python manage.py migrate --noinput",
   "routes": [
     {
       "src": "/(.*)",
