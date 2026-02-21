@@ -1,5 +1,9 @@
 {
-  "python_version": "3.13",
-  "install_command": "pip install -r requirements.txt",
+  "python": {
+    "version": "3.13",
+    "package_manager": "pip",
+    "entry": "manage.py"
+  },
+  "build_command": "pip install -r requirements.txt",
   "start_command": "python manage.py migrate --noinput && python manage.py bootstrap_superuser && _startup"
 }
