@@ -12,6 +12,7 @@ class ApiAuthMiddleware:
         "/api/auth/refresh/",
         "/api/geocode/search/",
         "/api/geocode/reverse/",
+        "/api/trips/preview-route/",
     )
 
     def __init__(self, get_response):

@@ -315,7 +315,8 @@ class TripCreateView(APIView):
 
 
 class TripRoutePreviewView(APIView):
-    permission_classes = [IsAuthenticated]
+    authentication_classes = []
+    permission_classes = [AllowAny]
 
     def post(self, request):
         serializer = TripCreateSerializer(data=request.data)
