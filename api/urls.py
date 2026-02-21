@@ -8,6 +8,7 @@ from .views import (
     LoginView,
     NearbyPoiView,
     LogoutView,
+    RefreshView,
     MeView,
     StatusEventCreateView,
     TripCompleteView,
@@ -21,6 +22,7 @@ from .views import (
 urlpatterns=[
    path("auth/login/", LoginView.as_view(), name="login"),
    path("auth/logout/", LogoutView.as_view(), name="logout"),
+   path("auth/refresh/", RefreshView.as_view(), name="refresh"),
    path("auth/me/", MeView.as_view(), name="me"),
    path("geocode/search/", GeocodeSearchView.as_view(), name="geocode-search"),
    path("geocode/reverse/", GeocodeReverseView.as_view(), name="geocode-reverse"),

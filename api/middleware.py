@@ -2,20 +2,21 @@ from django.conf import settings
 from django.http import JsonResponse
 from rest_framework.exceptions import AuthenticationFailed
 
-from .authentication import CookieJWTAuthentication
+from .authentication import BearerJWTAuthentication
 
 
 class ApiAuthMiddleware:
     PUBLIC_PATH_PREFIXES = (
         "/api/auth/login/",
         "/api/auth/logout/",
+        "/api/auth/refresh/",
         "/api/geocode/search/",
         "/api/geocode/reverse/",
     )
 
     def __init__(self, get_response):
         self.get_response = get_response
-        self.authenticator = CookieJWTAuthentication()
+        self.authenticator = BearerJWTAuthentication()
 
     @staticmethod
     def _clear_auth_cookies(response):
@@ -43,6 +44,9 @@ class ApiAuthMiddleware:
         path = request.path or ""
 
         if path.startswith("/api/"):
+            if request.method == "OPTIONS":
+                return self.get_response(request)
+
             if any(path.startswith(prefix) for prefix in self.PUBLIC_PATH_PREFIXES):
                 return self.get_response(request)
 

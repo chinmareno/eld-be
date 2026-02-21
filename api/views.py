@@ -43,45 +43,6 @@ FUEL_STOP_INTERVAL_MILES = 1000
 FUEL_STOP_DURATION_HOURS = 0.5
 
 
-def _token_max_age(setting_name):
-    lifetime = settings.SIMPLE_JWT[setting_name]
-    return int(lifetime.total_seconds())
-
-
-def _set_auth_cookies(response, access_token, refresh_token):
-    response.set_cookie(
-        key=settings.JWT_AUTH_COOKIE,
-        value=str(access_token),
-        max_age=_token_max_age("ACCESS_TOKEN_LIFETIME"),
-        httponly=True,
-        secure=settings.JWT_COOKIE_SECURE,
-        samesite=settings.JWT_COOKIE_SAMESITE,
-        path="/",
-    )
-    response.set_cookie(
-        key=settings.JWT_AUTH_REFRESH_COOKIE,
-        value=str(refresh_token),
-        max_age=_token_max_age("REFRESH_TOKEN_LIFETIME"),
-        httponly=True,
-        secure=settings.JWT_COOKIE_SECURE,
-        samesite=settings.JWT_COOKIE_SAMESITE,
-        path="/",
-    )
-
-
-def _clear_auth_cookies(response):
-    response.delete_cookie(
-        key=settings.JWT_AUTH_COOKIE,
-        path="/",
-        samesite=settings.JWT_COOKIE_SAMESITE,
-    )
-    response.delete_cookie(
-        key=settings.JWT_AUTH_REFRESH_COOKIE,
-        path="/",
-        samesite=settings.JWT_COOKIE_SAMESITE,
-    )
-
-
 class LoginView(APIView):
     authentication_classes = []
     permission_classes = [AllowAny]
@@ -107,10 +68,11 @@ class LoginView(APIView):
             {
                 "detail": "Login successful.",
                 "user": UserSerializer(user).data,
+                "access": str(access),
+                "refresh": str(refresh),
             },
             status=status.HTTP_200_OK,
         )
-        _set_auth_cookies(response, access, refresh)
         return response
 
 
@@ -119,12 +81,37 @@ class LogoutView(APIView):
     permission_classes = [AllowAny]
 
     def post(self, request):
-        response = Response(
+        return Response(
             {"detail": "Logout successful."},
             status=status.HTTP_200_OK,
         )
-        _clear_auth_cookies(response)
-        return response
+
+
+class RefreshView(APIView):
+    authentication_classes = []
+    permission_classes = [AllowAny]
+
+    def post(self, request):
+        refresh_token = request.data.get("refresh")
+        if not isinstance(refresh_token, str) or not refresh_token.strip():
+            return Response(
+                {"detail": "Refresh token is required."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        try:
+            refresh = RefreshToken(refresh_token)
+            access = refresh.access_token
+        except Exception:
+            return Response(
+                {"detail": "Invalid or expired refresh token."},
+                status=status.HTTP_401_UNAUTHORIZED,
+            )
+
+        return Response(
+            {"access": str(access)},
+            status=status.HTTP_200_OK,
+        )
 
 
 class MeView(APIView):

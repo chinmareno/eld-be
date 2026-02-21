@@ -195,7 +195,7 @@ CSRF_TRUSTED_ORIGINS = parse_csv(
 
 REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': (
-        'api.authentication.CookieJWTAuthentication',
+        'api.authentication.BearerJWTAuthentication',
     ),
 }
 
