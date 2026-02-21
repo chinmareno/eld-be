@@ -1,15 +1,10 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "buildCommand": "python manage.py migrate --noinput && python manage.py bootstrap_superuser",
-  "functions": {
-    "project/wsgi.py": {
-      "runtime": "python3.13"
-    }
-  },
   "routes": [
     {
       "src": "/(.*)",
-      "dest": "project/wsgi.py"
+      "dest": "api/wsgi.py"
     }
   ]
 }
