@@ -12,7 +12,6 @@ https://docs.djangoproject.com/en/6.0/ref/settings/
 
 from datetime import timedelta
 import os
-import shutil
 from pathlib import Path
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
@@ -64,9 +63,6 @@ def parse_int(value: str, default: int) -> int:
         return default
 
 
-IS_VERCEL = parse_bool(os.getenv("VERCEL"), False)
-
-
 # SECURITY WARNING: keep the secret key used in production secret!
 SECRET_KEY = os.getenv(
     "DJANGO_SECRET_KEY",
@@ -74,11 +70,11 @@ SECRET_KEY = os.getenv(
 )
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = parse_bool(os.getenv("DJANGO_DEBUG"), not IS_VERCEL)
+DEBUG = parse_bool(os.getenv("DJANGO_DEBUG"), True)
 
 ALLOWED_HOSTS = parse_csv(
     os.getenv("DJANGO_ALLOWED_HOSTS"),
-    ["127.0.0.1", "localhost", ".vercel.app"],
+    ["127.0.0.1", "localhost", ".zeabur.app"],
 )
 
 
@@ -98,7 +94,6 @@ INSTALLED_APPS = [
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
-    'whitenoise.middleware.WhiteNoiseMiddleware',
     'corsheaders.middleware.CorsMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
@@ -126,24 +121,14 @@ TEMPLATES = [
     },
 ]
 
-WSGI_APPLICATION = 'project.wsgi.app'
+WSGI_APPLICATION = 'project.wsgi.application'
 
 
 # Database
 # https://docs.djangoproject.com/en/6.0/ref/settings/#databases
 
 default_sqlite_path = BASE_DIR / "db.sqlite3"
-if IS_VERCEL:
-    # Vercel filesystem is read-only except /tmp, so copy the seeded DB once per cold start.
-    vercel_sqlite_path = Path("/tmp/db.sqlite3")
-    if not vercel_sqlite_path.exists() and default_sqlite_path.exists():
-        try:
-            shutil.copy2(default_sqlite_path, vercel_sqlite_path)
-        except OSError:
-            pass
-    sqlite_db_path = vercel_sqlite_path
-else:
-    sqlite_db_path = default_sqlite_path
+sqlite_db_path = Path(os.getenv("DJANGO_SQLITE_PATH", str(default_sqlite_path))).expanduser()
 
 DATABASES = {
     'default': {
@@ -190,20 +175,10 @@ USE_TZ = True
 STATIC_URL = '/static/'
 STATIC_ROOT = BASE_DIR / 'staticfiles'
 
-# Enable WhiteNoise compression and caching for static files
-STORAGES = {
-    "default": {
-        "BACKEND": "django.core.files.storage.FileSystemStorage",
-    },
-    "staticfiles": {
-        "BACKEND": "whitenoise.storage.CompressedManifestStaticFilesStorage",
-    },
-}
-
 SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
-SECURE_SSL_REDIRECT = parse_bool(os.getenv("DJANGO_SECURE_SSL_REDIRECT"), IS_VERCEL)
-SESSION_COOKIE_SECURE = parse_bool(os.getenv("DJANGO_SESSION_COOKIE_SECURE"), IS_VERCEL)
-CSRF_COOKIE_SECURE = parse_bool(os.getenv("DJANGO_CSRF_COOKIE_SECURE"), IS_VERCEL)
+SECURE_SSL_REDIRECT = parse_bool(os.getenv("DJANGO_SECURE_SSL_REDIRECT"), not DEBUG)
+SESSION_COOKIE_SECURE = parse_bool(os.getenv("DJANGO_SESSION_COOKIE_SECURE"), not DEBUG)
+CSRF_COOKIE_SECURE = parse_bool(os.getenv("DJANGO_CSRF_COOKIE_SECURE"), not DEBUG)
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 AUTH_USER_MODEL = 'api.User'
@@ -215,7 +190,7 @@ CORS_ALLOWED_ORIGINS = parse_csv(
 CORS_ALLOW_CREDENTIALS = parse_bool(os.getenv("DJANGO_CORS_ALLOW_CREDENTIALS"), True)
 CSRF_TRUSTED_ORIGINS = parse_csv(
     os.getenv("DJANGO_CSRF_TRUSTED_ORIGINS"),
-    ["http://localhost:5173", "http://127.0.0.1:5173", "https://*.vercel.app"],
+    ["http://localhost:5173", "http://127.0.0.1:5173", "https://*.zeabur.app"],
 )
 
 REST_FRAMEWORK = {
@@ -233,7 +208,7 @@ SIMPLE_JWT = {
 
 JWT_AUTH_COOKIE = 'access_token'
 JWT_AUTH_REFRESH_COOKIE = 'refresh_token'
-JWT_COOKIE_SECURE = parse_bool(os.getenv("DJANGO_JWT_COOKIE_SECURE"), IS_VERCEL)
+JWT_COOKIE_SECURE = parse_bool(os.getenv("DJANGO_JWT_COOKIE_SECURE"), not DEBUG)
 JWT_COOKIE_SAMESITE = os.getenv("DJANGO_JWT_COOKIE_SAMESITE", "Lax")
 GEOCODING_USER_AGENT = os.getenv(
     "GEOCODING_USER_AGENT",
