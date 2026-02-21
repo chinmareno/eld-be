@@ -499,6 +499,14 @@ class TripCompleteView(APIView):
         )
 
 
+class TestView(APIView):
+    authentication_classes = []
+    permission_classes = [AllowAny]
+
+    def get(self, request):
+        return Response({"message": "Hello from the Django backend! The API is alive."}, status=status.HTTP_200_OK)
+
+
 class EldLogsView(APIView):
     permission_classes = [IsAuthenticated]
 

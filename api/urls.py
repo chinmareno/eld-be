@@ -15,6 +15,7 @@ from .views import (
     TripRoutePreviewView,
     TripRouteView,
     TripSummaryView,
+    TestView,
 )
 
 urlpatterns=[
@@ -33,4 +34,5 @@ urlpatterns=[
    path("trips/<uuid:trip_id>/complete/", TripCompleteView.as_view(), name="trip-complete"),
    path("trips/<uuid:trip_id>/eld-logs/", EldLogsView.as_view(), name="trip-eld-logs"),
    path("trips/completed/eld-logs/", CompletedEldLogsView.as_view(), name="trip-completed-eld-logs"),
+   path("test/", TestView.as_view(), name="test-endpoint"),
 ]
